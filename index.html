@@ -1,667 +1,568 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Field Score</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍃</text></svg>">
-<style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Field Score</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍃</text></svg>">
+    <style>
+        :root {
+            --paper: #fff;
+            /*    --paper-card: #d9d6c4;*/
+            --ink: #2b2e23;
+            /*    --ink-soft: #565a49;*/
+        }
 
-  :root{
-    --paper: #fff;
-/*    --paper-card: #d9d6c4;*/
-    --ink: #2b2e23;
-/*    --ink-soft: #565a49;*/
-    --green: #33d16f;
-  }
+        * {
+            box-sizing: border-box;
+        }
 
-  *{ box-sizing: border-box; }
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background: var(--paper);
+            color: var(--ink);
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+        }
 
-  html, body{
-    margin:0; padding:0;
-    min-height:100vh;
-    background: var(--paper);
-    color: var(--ink);
-    font-family: 'Helvetica Neue', Arial, sans-serif;
-  }
+        .wrap {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 8vh 20px 6vh;
+        }
 
-  .wrap{
-    min-height:100vh;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:flex-start;
-    padding: 8vh 20px 6vh;
-  }
+        header {
+            text-align: center;
+            max-width: 480px;
+            margin-bottom: 5vh;
+        }
 
-  header{
-    text-align:center;
-    max-width: 480px;
-    margin-bottom: 5vh;
-  }
+        h1 {
+            font-optical-sizing: auto;
+            font-weight: 300;
+            font-size: clamp(1.6rem, 5vw, 2.0rem);
+            margin: 0;
+            letter-spacing: -0.01em;
+        }
 
-  h1{
-    font-optical-sizing: auto;
-    font-weight: 300;
-    font-size: clamp(1.6rem, 5vw, 2.0rem);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
+        /* --- the card --- */
 
-  /* --- the card --- */
+        .stage {
+            width: 100%;
+            max-width: 70vw;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-bottom: 140px;
+        }
 
-  .stage{
-    width: 100%;
-    max-width: 70vw;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    padding-bottom: 140px;
-  }
+        @media (max-width: 600px) {
+            .wrap {
+                padding-top: 4vh;
+            }
 
-  @media (max-width: 600px){
-    .wrap{ padding-top: 4vh; }
-    header{ margin-bottom: 2vh; }
-    .stage{ max-width: 100%; }
-  }
+            header {
+                margin-bottom: 2vh;
+            }
 
-  .card{
-    position:relative;
-    width:100%;
-    padding: 40px 4px 40px;
-    min-height: 220px;
-    display:flex;
-    flex-direction:column;
-    justify-content:center;
-  }
+            .stage {
+                max-width: 100%;
+            }
+        }
 
-  .instruction-text{
-    font-weight: 300;
-    font-size: clamp(2rem, 8.5vw, 3.4rem);
-    color: var(--ink);
-    text-align: center;
-    line-height: 1.15;
-  }
+        .card {
+            position: relative;
+            width: 100%;
+            padding: 40px 4px 40px;
+            min-height: 220px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
 
-  .instruction-text .word{
-    display:inline-block;
-    opacity: 0;
-    filter: blur(2px);
-    transform: translateY(4px);
-    animation: settle 0.5s ease forwards;
-  }
+        .instruction-text {
+            font-weight: 300;
+            font-size: clamp(2rem, 8.5vw, 3.4rem);
+            color: var(--ink);
+            text-align: center;
+            line-height: 1.15;
+        }
 
-  @keyframes settle{
-    to{ opacity:1; filter: blur(0); transform: translateY(0); }
-  }
+        .instruction-text .word {
+            display: inline-block;
+            opacity: 0;
+            filter: blur(2px);
+            transform: translateY(4px);
+            animation: settle 0.5s ease forwards;
+        }
 
-  @media (prefers-reduced-motion: reduce){
-    .instruction-text .word{
-      animation: none;
-      opacity: 1;
-      filter: none;
-      transform: none;
-    }
-  }
+        @keyframes settle {
+            to {
+                opacity: 1;
+                filter: blur(0);
+                transform: translateY(0);
+            }
+        }
 
-  /* --- generated path (mobile + location only) --- */
+        @media (prefers-reduced-motion: reduce) {
+            .instruction-text .word {
+                animation: none;
+                opacity: 1;
+                filter: none;
+                transform: none;
+            }
+        }
 
-  .path-stage{
-    display:none;
-    width: min(58vw, 220px);
-    aspect-ratio: 1;
-    margin: 18px auto 0;
-  }
+        .placeholder {
+            font-size: clamp(2rem, 8.5vw, 3.4rem);
+            color: var(--ink-soft);
+            display: block;
+            text-align: center;
+        }
 
-  .path-stage svg{ width:100%; height:100%; display:block; overflow:visible; }
-
-  .path-line{
-    fill:none;
-    stroke: var(--ink);
-    stroke-width: 1.6;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    opacity: 0.55;
-    vector-effect: non-scaling-stroke;
-    transition: stroke 0.5s ease, opacity 0.5s ease;
-  }
-
-  .path-line.complete{
-    stroke: var(--green);
-    opacity: 1;
-  }
-
-  .path-origin{
-    fill: none;
-    stroke: var(--ink);
-    stroke-width: 1;
-    opacity: 0.4;
-    vector-effect: non-scaling-stroke;
-  }
-
-  .user-dot{
-    fill: var(--green);
-    display:none;
-    transition: cx 0.3s linear, cy 0.3s linear;
-  }
-
-  .placeholder{
-    font-size: clamp(2rem, 8.5vw, 3.4rem);
-    color: var(--ink-soft);
-    display: block;
-    text-align: center;
-  }
-
-  /* --- controls ---
+        /* --- controls ---
      Fixed to the bottom of the viewport so the arrow sits in the same
      spot regardless of how long the current score runs. */
 
-  .controls{
-    position: fixed;
-    left: 50%;
-    bottom: 6vh;
-    transform: translateX(-50%);
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    gap: 14px;
-  }
+        .controls {
+            position: fixed;
+            left: 50%;
+            bottom: 6vh;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+        }
 
-  button.walk-btn{
-    width: 84px;
-    height: 84px;
-    border: none;
-    background: transparent;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    padding: 0;
-    cursor: pointer;
-    transition: transform 0.15s ease;
-    color: var(--ink);
-    -webkit-tap-highlight-color: transparent;
-    outline: none;
-    -webkit-touch-callout: none;
-    user-select: none;
-  }
+        button.walk-btn {
+            width: 84px;
+            height: 84px;
+            border: none;
+            background: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            cursor: pointer;
+            transition: transform 0.15s ease;
+            color: var(--ink);
+            -webkit-tap-highlight-color: transparent;
+            outline: none;
+            -webkit-touch-callout: none;
+            user-select: none;
+        }
 
-  button.walk-btn svg{ width: 48px; height: 48px; display:block; }
+        button.walk-btn svg {
+            width: 50px;
+            height: 50px;
+            display: block;
+        }
 
-  #needleGroup{ transition: transform 0.2s ease-out; }
+        #needleGroup {
+            transition: transform 0.2s ease-out;
+        }
 
-  button.walk-btn:active{ transform: scale(0.92); }
+        button.walk-btn:active {
+            transform: scale(0.92);
+        }
 
-  .tally{
-    font-size: clamp(1.6rem, 5vw, 2.0rem);
-    font-weight: 300;
-    letter-spacing: 0.06em;
-    color: var(--ink-soft);
-    min-height: 14px;
-    margin-top: 8px;
-  }
+        .tally {
+            font-size: clamp(1.6rem, 5vw, 2.0rem);
+            font-weight: 300;
+            letter-spacing: 0.06em;
+            color: var(--ink-soft);
+            min-height: 14px;
+            margin-top: 8px;
+        }
 
-</style>
+    </style>
 </head>
+
 <body>
 
-<div class="wrap">
+    <div class="wrap">
 
-  <header>
-    <h1>Field Score</h1>
-    <div class="tally" id="tally"></div>
-  </header>
+        <header>
+            <h1>Field Score</h1>
+            <div class="tally" id="tally"></div>
+        </header>
 
-  <div class="stage">
-    <div class="card" id="card">
-      <div class="instruction-text" id="instructionText">
-        <span class="placeholder">Begin walk when ready.</span>
-      </div>
+        <div class="stage">
+            <div class="card" id="card">
+                <div class="instruction-text" id="instructionText">
+                    <span class="placeholder">Begin walk when ready.</span>
+                </div>
+            </div>
 
-      <div class="path-stage" id="pathStage">
-        <svg id="pathSvg" viewBox="-2.5 -2.5 5 5">
-          <circle class="path-origin" cx="0" cy="0" r="0.12"/>
-          <path class="path-line" id="pathLine" d=""/>
-          <circle class="user-dot" id="userDot" cx="0" cy="0" r="0.14"/>
-        </svg>
-      </div>
+            <div class="controls">
+                <button class="walk-btn" id="genButton" aria-label="Begin walk">
+                    <svg id="arrowIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 12h15M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <!-- Mobile compass -->
+                    <svg id="compassIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
+
+                        <!-- North label -->
+                        <text x="12" y="2.8" text-anchor="middle" font-size="2.6" font-family="Helvetica, Arial, sans-serif" font-weight="400" fill="currentColor">
+                            N
+                        </text>
+
+                        <!-- Thin circle -->
+                        <circle cx="12" cy="13" r="7.8" stroke="currentColor" stroke-width="0.8" />
+
+                        <!-- Existing arrow -->
+                        <g id="needleGroup" transform="translate(12 13)">
+                            <path d="M-5 0H4M2.2-3L6 0L2.2 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+                        </g>
+
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+
     </div>
 
-    <div class="controls">
-      <button class="walk-btn" id="genButton" aria-label="Begin walk">
-        <svg id="arrowIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M4 12h15M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <svg id="compassIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
-          <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1" opacity="0.4"/>
-          <circle cx="12" cy="4.6" r="0.6" fill="currentColor" opacity="0.4"/>
-          <g id="needleGroup">
-            <path d="M12 5 L13.6 12 L12 19 L10.4 12 Z" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
-          </g>
-          <circle cx="12" cy="12" r="0.8" fill="currentColor"/>
-        </svg>
-      </button>
-    </div>
-  </div>
-
-
-</div>
-
-<script>
-/* =========================================================================
+    <script>
+        /* =========================================================================
    1. WORD BANKS
    Kept separate from sentence structure so the vocabulary can grow on its
    own without touching how instructions are assembled.
    ========================================================================= */
 
-const seekVerbs = [
-  "Walk until", "Keep walking until", "Slow your pace until",
-  "Wander until", "Follow the path until", "Walk slowly until",
-  "Take your time until", "Keep going until",
-];
+        const seekVerbs = [
+            "Walk until", "Keep walking until", "Slow your pace until",
+            "Wander until", "Follow the path until", "Walk slowly until",
+            "Take your time until", "Keep going until",
+        ];
 
-// things that can be physically picked up, carried, or traded
-const collectibleElements = [
-  "a leaf", "a twig", "a small stone", "a seed pod",
-  "a piece of bark", "a fallen leaf", "a blade of grass", "a pinecone",
-  "a dry husk", "a surprising object", "a scrap of moss", "a flower petal",
-  "a fallen fruit", "a shell of some kind",
-];
+        // things that can be physically picked up, carried, or traded
+        const collectibleElements = [
+            "a leaf", "a twig", "a small stone", "a seed pod",
+            "a piece of bark", "a fallen leaf", "a blade of grass", "a pinecone",
+            "a dry husk", "a surprising object", "a scrap of moss", "a flower petal",
+            "a fallen fruit", "a shell of some kind",
+        ];
 
-// things that should only be looked at, not taken
-const observeOnlyElements = [
-  "a spiderweb", "a shadow pattern on the ground",
-  "a puddle reflecting something above it", "a patch of moss",
-  "a cluster of insects at work", "a root breaking through the ground",
-  "a cloud that reminds you of something", "a knot in a tree trunk",
-  "a beam of light through the leaves", "a trail left by an animal",
-  "a crack in the bark", "a nest tucked somewhere unlikely", "a breeze",
-  "a ripple on standing water", "two branches touching",
-];
+        // things that should only be looked at, not taken
+        const observeOnlyElements = [
+            "a spiderweb", "a shadow pattern on the ground",
+            "a puddle reflecting something above it", "a patch of moss",
+            "a cluster of insects at work", "a root breaking through the ground",
+            "a cloud that reminds you of something", "a knot in a tree trunk",
+            "a beam of light through the leaves", "a trail left by an animal",
+            "a crack in the bark", "a nest tucked somewhere unlikely", "a breeze",
+            "a ripple on standing water", "two branches touching",
+        ];
 
-const qualifiers = [
-  "shaped like something familiar",
-  "in a color you haven't noticed today",
-  "older than everything around it",
-  "out of place here",
-  "catching the light",
-  "unlike anything else nearby",
-  "with an odd texture",
-  "bent or broken in an interesting way",
-  "half-hidden by something else",
-  "no bigger than a coin",
-  "that took a moment to spot",
-  "someone else already noticed",
-  "that doesn't belong to this season",
-  "still slightly damp",
-  "worn down by something",
-  "growing somewhere it shouldn't",
-];
+        const qualifiers = [
+            "shaped like something familiar",
+            "in a color you haven't noticed today",
+            "older than everything around it",
+            "out of place here",
+            "catching the light",
+            "unlike anything else nearby",
+            "with an odd texture",
+            "bent or broken in an interesting way",
+            "half-hidden by something else",
+            "no bigger than a coin",
+            "that took a moment to spot",
+            "someone else already noticed",
+            "that doesn't belong to this season",
+            "still slightly damp",
+            "worn down by something",
+            "growing somewhere it shouldn't",
+        ];
 
-const collectibleActions = [
-  "Pick it up and study it.",
-  "Photograph it from three angles.",
-  "Carry it, then leave it somewhere new.",
-  "Weigh it in your palm.",
-  "Leave it somewhere it'll surprise someone.",
-  "Turn it over before deciding.",
-  "Give it a name.",
-];
+        const collectibleActions = [
+            "Pick it up and study it.",
+            "Photograph it from three angles.",
+            "Carry it, then leave it somewhere new.",
+            "Weigh it in your palm.",
+            "Leave it somewhere it'll surprise someone.",
+            "Turn it over before deciding.",
+            "Give it a name.",
+        ];
 
-const observeActions = [
-  "Photograph it as you found it.",
-  "Trace its outline in the air.",
-  "Describe it out loud to no one.",
-  "Sketch it in three lines.",
-  "Watch it for a minute, still.",
-  "Guess how it got here.",
-  "Find its best angle.",
-  "Give it a name.",
-];
+        const observeActions = [
+            "Photograph it as you found it.",
+            "Trace its outline in the air.",
+            "Describe it out loud to no one.",
+            "Sketch it in three lines.",
+            "Watch it for a minute, still.",
+            "Guess how it got here.",
+            "Find its best angle.",
+            "Give it a name.",
+        ];
 
-const quantityTargets = [
-  { n: 3, thing: "twigs that fit in your palm", action: "line them up by size." },
-  { n: 5, thing: "different shades of green", action: "name each one out loud." },
-  { n: 4, thing: "sounds no person made", action: "guess what made the last one." },
-  { n: 2, thing: "leaves that are almost identical", action: "find the one difference." },
-  { n: 3, thing: "things smaller than a coin", action: "decide which is oldest." },
-  { n: 6, thing: "textures you can feel without looking", action: "keep your eyes closed for the last one." },
-  { n: 4, thing: "different kinds of bark", action: "rank them roughest to smoothest." },
-  { n: 3, thing: "signs an animal passed through", action: "guess which one is most recent." },
-  { n: 5, thing: "things smaller than your hand", action: "arrange them from lightest to heaviest." },
-];
+        const quantityTargets = [{
+                n: 3,
+                thing: "twigs that fit in your palm",
+                action: "line them up by size."
+            },
+            {
+                n: 5,
+                thing: "different shades of green",
+                action: "name each one out loud."
+            },
+            {
+                n: 4,
+                thing: "sounds no person made",
+                action: "guess what made the last one."
+            },
+            {
+                n: 2,
+                thing: "leaves that are almost identical",
+                action: "find the one difference."
+            },
+            {
+                n: 3,
+                thing: "things smaller than a coin",
+                action: "decide which is oldest."
+            },
+            {
+                n: 6,
+                thing: "textures you can feel without looking",
+                action: "keep your eyes closed for the last one."
+            },
+            {
+                n: 4,
+                thing: "different kinds of bark",
+                action: "rank them roughest to smoothest."
+            },
+            {
+                n: 3,
+                thing: "signs an animal passed through",
+                action: "guess which one is most recent."
+            },
+            {
+                n: 5,
+                thing: "things smaller than your hand",
+                action: "arrange them from lightest to heaviest."
+            },
+        ];
 
-const closingPrompts = [
-  "Notice what you almost missed.",
-  "Remember why you chose it.",
-  "Keep it in mind for the walk.",
-];
+        const closingPrompts = [
+            "Notice what you almost missed.",
+            "Remember why you chose it.",
+            "Keep it in mind for the walk.",
+        ];
 
-// smell-focused elements and actions, used by the dedicated scent template
-const scentElements = [
-  "damp earth", "something fresh", "something sweet", "rain on stone",
-  "crushed leaves", "flowers nearby", "scent from somewhere",
-  "wet bark", "something rotting", "fresh-cut grass", "dry dust",
-  "something green",
-];
+        // smell-focused elements and actions, used by the dedicated scent template
+        const scentElements = [
+            "damp earth", "something fresh", "something sweet", "rain on stone",
+            "crushed leaves", "flowers nearby", "scent from somewhere",
+            "wet bark", "something rotting", "fresh-cut grass", "dry dust",
+            "something green",
+        ];
 
-const scentActions = [
-  "Follow it as far as you can.",
-  "Try to name its source.",
-  "Breathe it in twice more.",
-  "See if it fades or grows.",
-  "Find where it's strongest.",
-  "Hold your breath, then smell it again.",
-];
+        const scentActions = [
+            "Follow it as far as you can.",
+            "Try to name its source.",
+            "Breathe it in twice more.",
+            "See if it fades or grows.",
+            "Find where it's strongest.",
+            "Hold your breath, then smell it again.",
+        ];
 
-// full sentence options for the stillness template, kept separate from the
-// find/collect banks since the sentence shape here is fixed either way
-const stillnessPrompts = [
-  (n) => `Stop walking. Wait until you spot ${n} things moving on their own.`,
-  (n) => `Stand still until you catch ${n} small movements around you.`,
-  (n) => `Pause here. Watch until you notice ${n} things shift or sway without you touching them.`,
-  (n) => `Stop and hold still until you can point to ${n} things in motion nearby.`,
-];
+        // full sentence options for the stillness template, kept separate from the
+        // find/collect banks since the sentence shape here is fixed either way
+        const stillnessPrompts = [
+            (n) => `Stop walking. Wait until you spot ${n} things moving on their own.`,
+            (n) => `Stand still until you catch ${n} small movements around you.`,
+            (n) => `Pause here. Watch until you notice ${n} things shift or sway without you touching them.`,
+            (n) => `Stop and hold still until you can point to ${n} things in motion nearby.`,
+        ];
 
-/* =========================================================================
-   2. TEMPLATES
-   Each template is a small function that returns { category, text }.
-   Category is kept on the object for future use (e.g. filtering or
-   weighting) even though the UI no longer displays it.
-   ========================================================================= */
+        /* =========================================================================
+           2. TEMPLATES
+           Each template is a small function that returns { category, text }.
+           Category is kept on the object for future use (e.g. filtering or
+           weighting) even though the UI no longer displays it.
+           ========================================================================= */
 
-function pick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
-function maybe(prob){ return Math.random() < prob; }
+        function pick(arr) {
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
 
-// Picks without repeats until a pool is exhausted, then reshuffles by
-// clearing that pool's used-set. Keeps qualifiers/actions/elements from
-// clustering on the same few entries within one walk.
-const usedByPool = new WeakMap();
-function pickUnique(arr){
-  let used = usedByPool.get(arr);
-  if (!used){ used = new Set(); usedByPool.set(arr, used); }
-  if (used.size >= arr.length) used.clear();
-  let choice;
-  do { choice = pick(arr); } while (used.has(choice));
-  used.add(choice);
-  return choice;
-}
+        function maybe(prob) {
+            return Math.random() < prob;
+        }
 
-function templateFind(){
-  const useCollectible = maybe(0.55);
-  const element = pickUnique(useCollectible ? collectibleElements : observeOnlyElements);
-  const action = pickUnique(useCollectible ? collectibleActions : observeActions);
-  const qualifier = pickUnique(qualifiers);
-  const closer = maybe(0.1) ? " " + pickUnique(closingPrompts) : "";
-  return {
-    category: "find",
-    text: `${pick(seekVerbs)} you see ${element} ${qualifier}. ${action}${closer}`
-  };
-}
+        // Picks without repeats until a pool is exhausted, then reshuffles by
+        // clearing that pool's used-set. Keeps qualifiers/actions/elements from
+        // clustering on the same few entries within one walk.
+        const usedByPool = new WeakMap();
 
-function templateScent(){
-  const scent = pickUnique(scentElements);
-  const action = pickUnique(scentActions);
-  return {
-    category: "scent",
-    text: `${pick(seekVerbs)} you smell ${scent}. ${action}`
-  };
-}
+        function pickUnique(arr) {
+            let used = usedByPool.get(arr);
+            if (!used) {
+                used = new Set();
+                usedByPool.set(arr, used);
+            }
+            if (used.size >= arr.length) used.clear();
+            let choice;
+            do {
+                choice = pick(arr);
+            } while (used.has(choice));
+            used.add(choice);
+            return choice;
+        }
 
-function templateQuantity(){
-  const q = pickUnique(quantityTargets);
-  const action = q.action.charAt(0).toLowerCase() + q.action.slice(1);
-  return {
-    category: "collect",
-    text: `${pick(seekVerbs)} you collect ${q.n} ${q.thing}. Then ${action}`
-  };
-}
+        function templateFind() {
+            const useCollectible = maybe(0.55);
+            const element = pickUnique(useCollectible ? collectibleElements : observeOnlyElements);
+            const action = pickUnique(useCollectible ? collectibleActions : observeActions);
+            const qualifier = pickUnique(qualifiers);
+            const closer = maybe(0.1) ? " " + pickUnique(closingPrompts) : "";
+            return {
+                category: "find",
+                text: `${pick(seekVerbs)} you see ${element} ${qualifier}. ${action}${closer}`
+            };
+        }
 
-function templateStillness(){
-  const n = 2 + Math.floor(Math.random() * 4);
-  const phrasing = pickUnique(stillnessPrompts);
-  return {
-    category: "stillness",
-    text: phrasing(n)
-  };
-}
+        function templateScent() {
+            const scent = pickUnique(scentElements);
+            const action = pickUnique(scentActions);
+            return {
+                category: "scent",
+                text: `${pick(seekVerbs)} you smell ${scent}. ${action}`
+            };
+        }
 
-// find-type is weighted slightly heavier — it's the most repeatable core loop
-const templates = [templateFind, templateFind, templateQuantity, templateStillness, templateScent];
+        function templateQuantity() {
+            const q = pickUnique(quantityTargets);
+            const action = q.action.charAt(0).toLowerCase() + q.action.slice(1);
+            return {
+                category: "collect",
+                text: `${pick(seekVerbs)} you collect ${q.n} ${q.thing}. Then ${action}`
+            };
+        }
 
-/* =========================================================================
-   3. GENERATION + NOVELTY TRACKING
-   Nothing here is pre-written — every call recombines the banks above.
-   The used-set just prevents the same exact sentence twice in one session.
-   ========================================================================= */
+        function templateStillness() {
+            const n = 2 + Math.floor(Math.random() * 4);
+            const phrasing = pickUnique(stillnessPrompts);
+            return {
+                category: "stillness",
+                text: phrasing(n)
+            };
+        }
 
-const usedThisWalk = new Set();
+        // find-type is weighted slightly heavier — it's the most repeatable core loop
+        const templates = [templateFind, templateFind, templateQuantity, templateStillness, templateScent];
 
-function generateInstruction(){
-  let attempt, tries = 0;
-  do {
-    attempt = pick(templates)();
-    tries++;
-  } while (usedThisWalk.has(attempt.text) && tries < 25);
-  usedThisWalk.add(attempt.text);
-  return attempt;
-}
+        /* =========================================================================
+           3. GENERATION + NOVELTY TRACKING
+           Nothing here is pre-written — every call recombines the banks above.
+           The used-set just prevents the same exact sentence twice in one session.
+           ========================================================================= */
 
-/* =========================================================================
-   4. RENDER
-   ========================================================================= */
+        const usedThisWalk = new Set();
 
-const instructionEl = document.getElementById('instructionText');
-const button = document.getElementById('genButton');
-const tallyEl = document.getElementById('tally');
-const arrowIcon = document.getElementById('arrowIcon');
-const compassIcon = document.getElementById('compassIcon');
-const needleGroup = document.getElementById('needleGroup');
+        function generateInstruction() {
+            let attempt, tries = 0;
+            do {
+                attempt = pick(templates)();
+                tries++;
+            } while (usedThisWalk.has(attempt.text) && tries < 25);
+            usedThisWalk.add(attempt.text);
+            return attempt;
+        }
 
-let count = 0;
+        /* =========================================================================
+           4. RENDER
+           ========================================================================= */
 
-/* --- compass (mobile only) ---
-   On a phone with an orientation sensor, the arrow becomes a real needle
-   pointing north. Desktop, or a phone that denies/lacks the sensor,
-   just keeps the plain chevron — no broken half-state. */
+        const instructionEl = document.getElementById('instructionText');
+        const button = document.getElementById('genButton');
+        const tallyEl = document.getElementById('tally');
+        const arrowIcon = document.getElementById('arrowIcon');
+        const compassIcon = document.getElementById('compassIcon');
+        const needleGroup = document.getElementById('needleGroup');
 
-const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-const hasOrientation = typeof DeviceOrientationEvent !== 'undefined';
+        let count = 0;
 
-let compassEnabled = false;
-let compassRequested = false;
+        /* --- compass (mobile only) ---
+           On a phone with an orientation sensor, the arrow becomes a real needle
+           pointing north. Desktop, or a phone that denies/lacks the sensor,
+           just keeps the plain chevron — no broken half-state. */
 
-function setNeedleHeading(heading){
-  needleGroup.setAttribute('transform', `rotate(${-heading} 12 12)`);
-}
+        const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        const hasOrientation = typeof DeviceOrientationEvent !== 'undefined';
 
-function handleOrientation(e){
-  let heading = null;
-  if (typeof e.webkitCompassHeading === 'number'){
-    heading = e.webkitCompassHeading; // iOS: true heading, 0 = north
-  } else if (e.absolute && e.alpha != null){
-    heading = 360 - e.alpha; // best-effort compass heading elsewhere
-  }
-  if (heading == null || isNaN(heading)) return;
+        let compassEnabled = false;
+        let compassRequested = false;
 
-  if (!compassEnabled){
-    compassEnabled = true;
-    arrowIcon.style.display = 'none';
-    compassIcon.style.display = 'block';
-  }
-  setNeedleHeading(heading);
-}
+        function setNeedleHeading(heading) {
+            needleGroup.setAttribute(
+                'transform',
+                `translate(12 13) rotate(${-heading})`
+            );
+        }
 
-function enableCompass(){
-  if (compassRequested || !isTouch || !hasOrientation) return;
-  compassRequested = true;
+        function handleOrientation(e) {
+            let heading = null;
+            if (typeof e.webkitCompassHeading === 'number') {
+                heading = e.webkitCompassHeading; // iOS: true heading, 0 = north
+            } else if (e.absolute && e.alpha != null) {
+                heading = 360 - e.alpha; // best-effort compass heading elsewhere
+            }
+            if (heading == null || isNaN(heading)) return;
 
-  const attach = () => {
-    window.addEventListener('deviceorientationabsolute', handleOrientation, true);
-    window.addEventListener('deviceorientation', handleOrientation, true);
-  };
+            if (!compassEnabled) {
+                compassEnabled = true;
+                arrowIcon.style.display = 'none';
+                compassIcon.style.display = 'block';
+            }
+            setNeedleHeading(heading);
+        }
 
-  if (typeof DeviceOrientationEvent.requestPermission === 'function'){
-    // iOS: must be called directly from a user gesture, which this is.
-    DeviceOrientationEvent.requestPermission().then(state => {
-      if (state === 'granted') attach();
-    }).catch(() => {});
-  } else {
-    attach();
-  }
-}
+        function enableCompass() {
+            if (compassRequested || !isTouch || !hasOrientation) return;
+            compassRequested = true;
 
-/* --- generated path (mobile + location only) ---
-   Each instruction gets its own loose, wandering line 1-3m long,
-   rooted at wherever the walker is standing when it's generated.
-   The walker shows as a green dot; the line turns green once
-   they've passed close to nearly all of it. */
+            const attach = () => {
+                window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+                window.addEventListener('deviceorientation', handleOrientation, true);
+            };
 
-const pathStage = document.getElementById('pathStage');
-const pathLine = document.getElementById('pathLine');
-const userDot = document.getElementById('userDot');
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // iOS: must be called directly from a user gesture, which this is.
+                DeviceOrientationEvent.requestPermission().then(state => {
+                    if (state === 'granted') attach();
+                }).catch(() => {});
+            } else {
+                attach();
+            }
+        }
 
-const hasGeolocation = 'geolocation' in navigator;
-const PATH_TOLERANCE_M = 1.0;   // how close counts as "on the line"
-const COMPLETE_RATIO = 0.9;     // fraction of the line that must be covered
+        function renderInstruction({
+            text
+        }) {
+            const words = text.split(' ');
+            instructionEl.innerHTML = words
+                .map((w, i) => `<span class="word" style="animation-delay:${i * 0.028}s">${w}</span>`)
+                .join(' ');
 
-let locationRequested = false;
-let currentPos = null;   // { lat, lon }
-let pathOrigin = null;   // { lat, lon } path was generated from
-let pathSamples = [];    // [{ x, y, covered }] in local meters
-let pathActive = false;
-let pathComplete = false;
+            count += 1;
+            tallyEl.textContent = String(count).padStart(2, '0');
+            button.setAttribute('aria-label', 'Next instruction');
+        }
 
-function gpsToLocal(lat, lon, originLat, originLon){
-  const R = 6378137;
-  const dLat = (lat - originLat) * Math.PI / 180;
-  const dLon = (lon - originLon) * Math.PI / 180;
-  const north = dLat * R;
-  const east = dLon * R * Math.cos(originLat * Math.PI / 180);
-  return { x: east, y: -north }; // SVG y grows downward; flip so north is up
-}
+        button.addEventListener('click', () => {
+            enableCompass();
+            renderInstruction(generateInstruction());
+        });
 
-// Smooth curve through the sample points — the same points double as
-// coverage-tracking targets, so the visual shape and the "have I walked
-// this part yet" check always agree.
-function catmullRomPath(points){
-  if (points.length < 2) return '';
-  let d = `M ${points[0].x.toFixed(3)} ${points[0].y.toFixed(3)} `;
-  for (let i = 0; i < points.length - 1; i++){
-    const p0 = points[i - 1] || points[i];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[i + 2] || p2;
-    const c1x = p1.x + (p2.x - p0.x) / 6;
-    const c1y = p1.y + (p2.y - p0.y) / 6;
-    const c2x = p2.x - (p3.x - p1.x) / 6;
-    const c2y = p2.y - (p3.y - p1.y) / 6;
-    d += `C ${c1x.toFixed(3)} ${c1y.toFixed(3)}, ${c2x.toFixed(3)} ${c2y.toFixed(3)}, ${p2.x.toFixed(3)} ${p2.y.toFixed(3)} `;
-  }
-  return d;
-}
-
-function generatePath(){
-  const targetLength = 1 + Math.random() * 2; // 1-3m
-  const steps = 16 + Math.floor(Math.random() * 10);
-  const stepLen = targetLength / (steps - 1);
-  const points = [{ x: 0, y: 0 }];
-  let heading = Math.random() * Math.PI * 2;
-
-  for (let i = 1; i < steps; i++){
-    heading += (Math.random() - 0.5) * 1.1; // organic wobble, not a straight line
-    const prev = points[i - 1];
-    points.push({
-      x: prev.x + Math.cos(heading) * stepLen,
-      y: prev.y + Math.sin(heading) * stepLen,
-    });
-  }
-
-  // rescale so the wobbly walk still lands close to the target length
-  let rawLength = 0;
-  for (let i = 1; i < points.length; i++){
-    rawLength += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
-  }
-  const scale = rawLength > 0 ? targetLength / rawLength : 1;
-  return points.map(p => ({ x: p.x * scale, y: p.y * scale, covered: false }));
-}
-
-function updatePathForInstruction(){
-  if (!hasGeolocation || !isTouch || !currentPos){
-    pathActive = false;
-    pathStage.style.display = 'none';
-    return;
-  }
-
-  pathOrigin = { lat: currentPos.lat, lon: currentPos.lon };
-  pathSamples = generatePath();
-  pathComplete = false;
-  pathActive = true;
-
-  pathLine.classList.remove('complete');
-  pathLine.setAttribute('d', catmullRomPath(pathSamples));
-  userDot.setAttribute('cx', '0');
-  userDot.setAttribute('cy', '0');
-  userDot.style.display = 'block';
-  pathStage.style.display = 'block';
-}
-
-function updateUserDotAndCoverage(){
-  if (!pathActive || !currentPos || !pathOrigin) return;
-
-  const local = gpsToLocal(currentPos.lat, currentPos.lon, pathOrigin.lat, pathOrigin.lon);
-  userDot.setAttribute('cx', local.x.toFixed(3));
-  userDot.setAttribute('cy', local.y.toFixed(3));
-
-  if (pathComplete) return;
-
-  let coveredCount = 0;
-  for (const s of pathSamples){
-    if (!s.covered && Math.hypot(local.x - s.x, local.y - s.y) <= PATH_TOLERANCE_M){
-      s.covered = true;
-    }
-    if (s.covered) coveredCount++;
-  }
-
-  if (coveredCount / pathSamples.length >= COMPLETE_RATIO){
-    pathComplete = true;
-    pathLine.classList.add('complete');
-  }
-}
-
-function handlePosition(pos){
-  currentPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-  updateUserDotAndCoverage();
-}
-
-function enableLocation(){
-  if (locationRequested || !hasGeolocation || !isTouch) return;
-  locationRequested = true;
-  navigator.geolocation.watchPosition(handlePosition, () => {}, {
-    enableHighAccuracy: true,
-    maximumAge: 1000,
-    timeout: 15000,
-  });
-}
-
-function renderInstruction({ text }){
-  const words = text.split(' ');
-  instructionEl.innerHTML = words
-    .map((w, i) => `<span class="word" style="animation-delay:${i * 0.028}s">${w}</span>`)
-    .join(' ');
-
-  count += 1;
-  tallyEl.textContent = String(count).padStart(2, '0');
-  button.setAttribute('aria-label', 'Next instruction');
-
-  updatePathForInstruction();
-}
-
-button.addEventListener('click', () => {
-  enableCompass();
-  enableLocation();
-  renderInstruction(generateInstruction());
-});
-</script>
+    </script>
 
 </body>
+
 </html>
