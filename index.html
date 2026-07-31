@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Field Score</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍃</text></svg>">
+<style>
+
+  :root{
+    --paper: #fff;
+    --paper-card: #d9d6c4;
+    --ink: #2b2e23;
+    --ink-soft: #565a49;
+  }
+
+  *{ box-sizing: border-box; }
+
+  html, body{
+    margin:0; padding:0;
+    min-height:100vh;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  .wrap{
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    padding: 8vh 20px 6vh;
+  }
+
+  header{
+    text-align:center;
+    max-width: 480px;
+    margin-bottom: 5vh;
+  }
+
+  h1{
+    font-optical-sizing: auto;
+    font-weight: 300;
+    font-size: clamp(1.6rem, 5vw, 2.0rem);
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  /* --- the card --- */
+
+  .stage{
+    width: 100%;
+    max-width: 70vw;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding-bottom: 140px;
+  }
+
+  .card{
+    position:relative;
+    width:100%;
+    padding: 40px 4px 40px;
+    min-height: 220px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+  }
+
+  .instruction-text{
+    font-weight: 300;
+    font-size: clamp(3.5rem, 26.6vw, 3.8rem);
+    color: var(--ink);
+    text-align: center;
+    line-height: 0.98;
+  }
+
+  .instruction-text .word{
+    display:inline-block;
+    opacity: 0;
+    filter: blur(2px);
+    transform: translateY(4px);
+    animation: settle 0.5s ease forwards;
+  }
+
+  @keyframes settle{
+    to{ opacity:1; filter: blur(0); transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .instruction-text .word{
+      animation: none;
+      opacity: 1;
+      filter: none;
+      transform: none;
+    }
+  }
+
+  .placeholder{
+    font-size: clamp(3.5rem, 26.6vw, 3.8rem);
+    color: var(--ink-soft);
+    display: block;
+    text-align: center;
+  }
+
+  /* --- controls ---
+     Fixed to the bottom of the viewport so the arrow sits in the same
+     spot regardless of how long the current score runs. */
+
+  .controls{
+    position: fixed;
+    left: 50%;
+    bottom: 6vh;
+    transform: translateX(-50%);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap: 14px;
+  }
+
+  button.walk-btn{
+    width: 84px;
+    height: 84px;
+    border: none;
+    background: transparent;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 0;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+
+  button.walk-btn svg{ width: 48px; height: 48px; display:block; }
+
+  button.walk-btn:active{ transform: scale(0.92); }
+
+  .tally{
+    font-size: clamp(1.6rem, 5vw, 2.0rem);
+    font-weight: 300;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    min-height: 14px;
+    margin-top: 8px;
+  }
+
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header>
+    <h1>Field Score</h1>
+    <div class="tally" id="tally"></div>
+  </header>
+
+  <div class="stage">
+    <div class="card" id="card">
+      <div class="instruction-text" id="instructionText">
+        <span class="placeholder">Begin walk when ready.</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="walk-btn" id="genButton" aria-label="Begin walk">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 12h15M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+
+</div>
+
+<script>
+/* =========================================================================
+   1. WORD BANKS
+   Kept separate from sentence structure so the vocabulary can grow on its
+   own without touching how instructions are assembled.
+   ========================================================================= */
+
+const seekVerbs = [
+  "Walk until", "Keep walking until", "Slow your pace until",
+  "Wander until", "Follow the path until", "Drift until",
+  "Take your time until", "Keep going until",
+];
+
+// things that can be physically picked up, carried, or traded
+const collectibleElements = [
+  "a leaf", "a twig", "a small stone", "a seed pod",
+  "a piece of bark", "a fallen feather", "a blade of grass", "a pinecone",
+  "a dry husk", "a burr", "a scrap of moss", "a flower petal",
+  "a fallen berry", "a shell of some kind",
+];
+
+// things that should only be looked at, not taken
+const observeOnlyElements = [
+  "a spiderweb", "a shadow pattern on the ground",
+  "a puddle reflecting something above it", "a patch of moss",
+  "a cluster of insects at work", "a root breaking through the path",
+  "a cloud that reminds you of something", "a knot in a tree trunk",
+  "a beam of light through the leaves", "a trail left by an animal",
+  "a crack in the bark", "a nest tucked somewhere unlikely",
+  "a ripple on standing water", "two branches touching",
+];
+
+const qualifiers = [
+  "shaped like something familiar",
+  "in a color you haven't noticed today",
+  "older than everything around it",
+  "out of place here",
+  "catching the light",
+  "unlike anything else nearby",
+  "with an odd texture",
+  "bent or broken in an interesting way",
+  "half-hidden by something else",
+  "no bigger than a coin",
+  "that took a moment to spot",
+  "someone else already noticed",
+  "that doesn't belong to this season",
+  "still slightly damp",
+  "worn down by something",
+  "growing somewhere it shouldn't",
+];
+
+const collectibleActions = [
+  "Pick it up and study it for a minute.",
+  "Photograph it from three angles.",
+  "Carry it until your walk ends, then leave it somewhere new.",
+  "Weigh it in your palm.",
+  "Trade it for a better one.",
+  "Set it somewhere it'll surprise the next person.",
+  "Turn it over slowly before you decide anything.",
+  "Give it a name.",
+];
+
+const observeActions = [
+  "Photograph it as you found it.",
+  "Trace its outline in the air.",
+  "Describe it out loud to someone who can't see it.",
+  "Sketch it in three lines.",
+  "Watch it for one minute, still.",
+  "Guess how it got here.",
+  "Find the best angle to see it from.",
+  "Give it a name before you walk on.",
+];
+
+const quantityTargets = [
+  { n: 3, thing: "twigs that fit in your palm", action: "line them up by size." },
+  { n: 5, thing: "different shades of green", action: "name each one out loud." },
+  { n: 4, thing: "sounds no person made", action: "guess what made the last one." },
+  { n: 2, thing: "leaves that are almost identical", action: "find the one difference." },
+  { n: 3, thing: "things smaller than a coin", action: "decide which is oldest." },
+  { n: 6, thing: "textures you can feel without looking", action: "keep your eyes closed for the last one." },
+  { n: 4, thing: "different kinds of bark", action: "rank them roughest to smoothest." },
+  { n: 3, thing: "signs an animal passed through", action: "guess which one is most recent." },
+  { n: 5, thing: "things smaller than your hand", action: "arrange them from lightest to heaviest." },
+];
+
+const closingPrompts = [
+  "Notice what you almost missed.",
+  "What did you nearly walk past?",
+  "Remember why you chose it.",
+  "Keep it in mind for the rest of the walk.",
+];
+
+// full sentence options for the stillness template, kept separate from the
+// find/collect banks since the sentence shape here is fixed either way
+const stillnessPrompts = [
+  (n) => `Stop walking. Wait until you spot ${n} things moving on their own.`,
+  (n) => `Stand still until you catch ${n} small movements around you.`,
+  (n) => `Pause here. Watch until you notice ${n} things shift or sway without you touching them.`,
+  (n) => `Stop and hold still until you can point to ${n} things in motion nearby.`,
+];
+
+/* =========================================================================
+   2. TEMPLATES
+   Each template is a small function that returns { category, text }.
+   Category is kept on the object for future use (e.g. filtering or
+   weighting) even though the UI no longer displays it.
+   ========================================================================= */
+
+function pick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+function maybe(prob){ return Math.random() < prob; }
+
+// Picks without repeats until a pool is exhausted, then reshuffles by
+// clearing that pool's used-set. Keeps qualifiers/actions/elements from
+// clustering on the same few entries within one walk.
+const usedByPool = new WeakMap();
+function pickUnique(arr){
+  let used = usedByPool.get(arr);
+  if (!used){ used = new Set(); usedByPool.set(arr, used); }
+  if (used.size >= arr.length) used.clear();
+  let choice;
+  do { choice = pick(arr); } while (used.has(choice));
+  used.add(choice);
+  return choice;
+}
+
+function templateFind(){
+  const useCollectible = maybe(0.55);
+  const element = pickUnique(useCollectible ? collectibleElements : observeOnlyElements);
+  const action = pickUnique(useCollectible ? collectibleActions : observeActions);
+  const qualifier = pickUnique(qualifiers);
+  const closer = maybe(0.2) ? " " + pickUnique(closingPrompts) : "";
+  return {
+    category: "find",
+    text: `${pick(seekVerbs)} you see ${element} ${qualifier}. ${action}${closer}`
+  };
+}
+
+function templateQuantity(){
+  const q = pickUnique(quantityTargets);
+  const action = q.action.charAt(0).toLowerCase() + q.action.slice(1);
+  return {
+    category: "collect",
+    text: `${pick(seekVerbs)} you collect ${q.n} ${q.thing}. Then ${action}`
+  };
+}
+
+function templateStillness(){
+  const n = 2 + Math.floor(Math.random() * 4);
+  const phrasing = pickUnique(stillnessPrompts);
+  return {
+    category: "stillness",
+    text: phrasing(n)
+  };
+}
+
+// find-type is weighted slightly heavier — it's the most repeatable core loop
+const templates = [templateFind, templateFind, templateQuantity, templateStillness];
+
+/* =========================================================================
+   3. GENERATION + NOVELTY TRACKING
+   Nothing here is pre-written — every call recombines the banks above.
+   The used-set just prevents the same exact sentence twice in one session.
+   ========================================================================= */
+
+const usedThisWalk = new Set();
+
+function generateInstruction(){
+  let attempt, tries = 0;
+  do {
+    attempt = pick(templates)();
+    tries++;
+  } while (usedThisWalk.has(attempt.text) && tries < 25);
+  usedThisWalk.add(attempt.text);
+  return attempt;
+}
+
+/* =========================================================================
+   4. RENDER
+   ========================================================================= */
+
+const instructionEl = document.getElementById('instructionText');
+const button = document.getElementById('genButton');
+const tallyEl = document.getElementById('tally');
+
+let count = 0;
+
+function renderInstruction({ text }){
+  const words = text.split(' ');
+  instructionEl.innerHTML = words
+    .map((w, i) => `<span class="word" style="animation-delay:${i * 0.028}s">${w}</span>`)
+    .join(' ');
+
+  count += 1;
+  tallyEl.textContent = String(count).padStart(2, '0');
+  button.setAttribute('aria-label', 'Next instruction');
+}
+
+button.addEventListener('click', () => {
+  renderInstruction(generateInstruction());
+});
+</script>
+
+</body>
+</html>
