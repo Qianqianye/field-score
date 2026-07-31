@@ -9,9 +9,9 @@
 
   :root{
     --paper: #fff;
-    --paper-card: #d9d6c4;
+/*    --paper-card: #d9d6c4;*/
     --ink: #2b2e23;
-    --ink-soft: #565a49;
+/*    --ink-soft: #565a49;*/
   }
 
   *{ box-sizing: border-box; }
@@ -56,6 +56,12 @@
     flex-direction:column;
     align-items:center;
     padding-bottom: 140px;
+  }
+
+  @media (max-width: 600px){
+    .wrap{ padding-top: 4vh; }
+    header{ margin-bottom: 2vh; }
+    .stage{ max-width: 100%; }
   }
 
   .card{
@@ -189,26 +195,26 @@
 
 const seekVerbs = [
   "Walk until", "Keep walking until", "Slow your pace until",
-  "Wander until", "Follow the path until", "Drift until",
+  "Wander until", "Follow the path until", "Walk slowly until",
   "Take your time until", "Keep going until",
 ];
 
 // things that can be physically picked up, carried, or traded
 const collectibleElements = [
   "a leaf", "a twig", "a small stone", "a seed pod",
-  "a piece of bark", "a fallen feather", "a blade of grass", "a pinecone",
-  "a dry husk", "a burr", "a scrap of moss", "a flower petal",
-  "a fallen berry", "a shell of some kind",
+  "a piece of bark", "a fallen leaf", "a blade of grass", "a pinecone",
+  "a dry husk", "a surprising object", "a scrap of moss", "a flower petal",
+  "a fallen fruit", "a shell of some kind",
 ];
 
 // things that should only be looked at, not taken
 const observeOnlyElements = [
   "a spiderweb", "a shadow pattern on the ground",
   "a puddle reflecting something above it", "a patch of moss",
-  "a cluster of insects at work", "a root breaking through the path",
+  "a cluster of insects at work", "a root breaking through the ground",
   "a cloud that reminds you of something", "a knot in a tree trunk",
   "a beam of light through the leaves", "a trail left by an animal",
-  "a crack in the bark", "a nest tucked somewhere unlikely",
+  "a crack in the bark", "a nest tucked somewhere unlikely", "a breeze",
   "a ripple on standing water", "two branches touching",
 ];
 
@@ -232,25 +238,24 @@ const qualifiers = [
 ];
 
 const collectibleActions = [
-  "Pick it up and study it for a minute.",
+  "Pick it up and study it.",
   "Photograph it from three angles.",
-  "Carry it until your walk ends, then leave it somewhere new.",
+  "Carry it, then leave it somewhere new.",
   "Weigh it in your palm.",
-  "Trade it for a better one.",
-  "Set it somewhere it'll surprise the next person.",
-  "Turn it over slowly before you decide anything.",
+  "Leave it somewhere it'll surprise someone.",
+  "Turn it over before deciding.",
   "Give it a name.",
 ];
 
 const observeActions = [
   "Photograph it as you found it.",
   "Trace its outline in the air.",
-  "Describe it out loud to someone who can't see it.",
+  "Describe it out loud to no one.",
   "Sketch it in three lines.",
-  "Watch it for one minute, still.",
+  "Watch it for a minute, still.",
   "Guess how it got here.",
-  "Find the best angle to see it from.",
-  "Give it a name before you walk on.",
+  "Find its best angle.",
+  "Give it a name.",
 ];
 
 const quantityTargets = [
@@ -267,9 +272,25 @@ const quantityTargets = [
 
 const closingPrompts = [
   "Notice what you almost missed.",
-  "What did you nearly walk past?",
   "Remember why you chose it.",
-  "Keep it in mind for the rest of the walk.",
+  "Keep it in mind for the walk.",
+];
+
+// smell-focused elements and actions, used by the dedicated scent template
+const scentElements = [
+  "damp earth", "pine or cedar", "something sweet", "rain on stone",
+  "crushed leaves", "flowers nearby", "smoke from somewhere",
+  "wet bark", "something rotting", "fresh-cut grass", "dry dust",
+  "something green",
+];
+
+const scentActions = [
+  "Follow it as far as you can.",
+  "Try to name its source.",
+  "Breathe it in twice more.",
+  "See if it fades or grows.",
+  "Find where it's strongest.",
+  "Hold your breath, then smell it again.",
 ];
 
 // full sentence options for the stillness template, kept separate from the
@@ -310,10 +331,19 @@ function templateFind(){
   const element = pickUnique(useCollectible ? collectibleElements : observeOnlyElements);
   const action = pickUnique(useCollectible ? collectibleActions : observeActions);
   const qualifier = pickUnique(qualifiers);
-  const closer = maybe(0.2) ? " " + pickUnique(closingPrompts) : "";
+  const closer = maybe(0.1) ? " " + pickUnique(closingPrompts) : "";
   return {
     category: "find",
     text: `${pick(seekVerbs)} you see ${element} ${qualifier}. ${action}${closer}`
+  };
+}
+
+function templateScent(){
+  const scent = pickUnique(scentElements);
+  const action = pickUnique(scentActions);
+  return {
+    category: "scent",
+    text: `${pick(seekVerbs)} you smell ${scent}. ${action}`
   };
 }
 
@@ -336,7 +366,7 @@ function templateStillness(){
 }
 
 // find-type is weighted slightly heavier — it's the most repeatable core loop
-const templates = [templateFind, templateFind, templateQuantity, templateStillness];
+const templates = [templateFind, templateFind, templateQuantity, templateStillness, templateScent];
 
 /* =========================================================================
    3. GENERATION + NOVELTY TRACKING
