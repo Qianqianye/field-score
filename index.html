@@ -145,6 +145,8 @@
 
   button.walk-btn svg{ width: 48px; height: 48px; display:block; }
 
+  #needleGroup{ transition: transform 0.2s ease-out; }
+
   button.walk-btn:active{ transform: scale(0.92); }
 
   .tally{
@@ -176,8 +178,16 @@
 
     <div class="controls">
       <button class="walk-btn" id="genButton" aria-label="Begin walk">
-        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg id="arrowIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M4 12h15M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <svg id="compassIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
+          <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1" opacity="0.4"/>
+          <circle cx="12" cy="4.6" r="0.6" fill="currentColor" opacity="0.4"/>
+          <g id="needleGroup">
+            <path d="M12 5 L13.6 12 L12 19 L10.4 12 Z" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
+          </g>
+          <circle cx="12" cy="12" r="0.8" fill="currentColor"/>
         </svg>
       </button>
     </div>
@@ -278,8 +288,8 @@ const closingPrompts = [
 
 // smell-focused elements and actions, used by the dedicated scent template
 const scentElements = [
-  "damp earth", "pine or cedar", "something sweet", "rain on stone",
-  "crushed leaves", "flowers nearby", "smoke from somewhere",
+  "damp earth", "something fresh", "something sweet", "rain on stone",
+  "crushed leaves", "flowers nearby", "scent from somewhere",
   "wet bark", "something rotting", "fresh-cut grass", "dry dust",
   "something green",
 ];
@@ -393,8 +403,62 @@ function generateInstruction(){
 const instructionEl = document.getElementById('instructionText');
 const button = document.getElementById('genButton');
 const tallyEl = document.getElementById('tally');
+const arrowIcon = document.getElementById('arrowIcon');
+const compassIcon = document.getElementById('compassIcon');
+const needleGroup = document.getElementById('needleGroup');
 
 let count = 0;
+
+/* --- compass (mobile only) ---
+   On a phone with an orientation sensor, the arrow becomes a real needle
+   pointing north. Desktop, or a phone that denies/lacks the sensor,
+   just keeps the plain chevron — no broken half-state. */
+
+const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+const hasOrientation = typeof DeviceOrientationEvent !== 'undefined';
+
+let compassEnabled = false;
+let compassRequested = false;
+
+function setNeedleHeading(heading){
+  needleGroup.setAttribute('transform', `rotate(${-heading} 12 12)`);
+}
+
+function handleOrientation(e){
+  let heading = null;
+  if (typeof e.webkitCompassHeading === 'number'){
+    heading = e.webkitCompassHeading; // iOS: true heading, 0 = north
+  } else if (e.absolute && e.alpha != null){
+    heading = 360 - e.alpha; // best-effort compass heading elsewhere
+  }
+  if (heading == null || isNaN(heading)) return;
+
+  if (!compassEnabled){
+    compassEnabled = true;
+    arrowIcon.style.display = 'none';
+    compassIcon.style.display = 'block';
+  }
+  setNeedleHeading(heading);
+}
+
+function enableCompass(){
+  if (compassRequested || !isTouch || !hasOrientation) return;
+  compassRequested = true;
+
+  const attach = () => {
+    window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+    window.addEventListener('deviceorientation', handleOrientation, true);
+  };
+
+  if (typeof DeviceOrientationEvent.requestPermission === 'function'){
+    // iOS: must be called directly from a user gesture, which this is.
+    DeviceOrientationEvent.requestPermission().then(state => {
+      if (state === 'granted') attach();
+    }).catch(() => {});
+  } else {
+    attach();
+  }
+}
 
 function renderInstruction({ text }){
   const words = text.split(' ');
@@ -408,6 +472,7 @@ function renderInstruction({ text }){
 }
 
 button.addEventListener('click', () => {
+  enableCompass();
   renderInstruction(generateInstruction());
 });
 </script>
