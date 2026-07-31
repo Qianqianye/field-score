@@ -70,10 +70,10 @@
 
   .instruction-text{
     font-weight: 300;
-    font-size: clamp(3.5rem, 26.6vw, 3.8rem);
+    font-size: clamp(1.6rem, 7vw, 3.4rem);
     color: var(--ink);
     text-align: center;
-    line-height: 0.98;
+    line-height: 1.15;
   }
 
   .instruction-text .word{
@@ -98,7 +98,7 @@
   }
 
   .placeholder{
-    font-size: clamp(3.5rem, 26.6vw, 3.8rem);
+    font-size: clamp(1.6rem, 7vw, 3.4rem);
     color: var(--ink-soft);
     display: block;
     text-align: center;
@@ -130,6 +130,11 @@
     padding: 0;
     cursor: pointer;
     transition: transform 0.15s ease;
+    color: var(--ink);
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+    -webkit-touch-callout: none;
+    user-select: none;
   }
 
   button.walk-btn svg{ width: 48px; height: 48px; display:block; }
