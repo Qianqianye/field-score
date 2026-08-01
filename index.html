@@ -12,6 +12,7 @@
 /*    --paper-card: #d9d6c4;*/
     --ink: #2b2e23;
 /*    --ink-soft: #565a49;*/
+    --green: #33d16f;
   }
 
   *{ box-sizing: border-box; }
@@ -103,6 +104,47 @@
     }
   }
 
+  /* --- generated path (mobile + location only) --- */
+
+  .path-stage{
+    display:none;
+    width: min(58vw, 220px);
+    aspect-ratio: 1;
+    margin: 18px auto 0;
+  }
+
+  .path-stage svg{ width:100%; height:100%; display:block; overflow:visible; }
+
+  .path-line{
+    fill:none;
+    stroke: var(--ink);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.55;
+    vector-effect: non-scaling-stroke;
+    transition: stroke 0.5s ease, opacity 0.5s ease;
+  }
+
+  .path-line.complete{
+    stroke: var(--green);
+    opacity: 1;
+  }
+
+  .path-origin{
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 1;
+    opacity: 0.4;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .user-dot{
+    fill: var(--green);
+    display:none;
+    transition: cx 0.3s linear, cy 0.3s linear;
+  }
+
   .placeholder{
     font-size: clamp(2rem, 8.5vw, 3.4rem);
     color: var(--ink-soft);
@@ -145,7 +187,10 @@
 
   button.walk-btn svg{ width: 48px; height: 48px; display:block; }
 
-  #needleGroup{ transition: transform 0.2s ease-out; }
+  #arrowIcon{
+    transition: transform 0.35s ease-out;
+    transform-origin: center;
+  }
 
   button.walk-btn:active{ transform: scale(0.92); }
 
@@ -174,20 +219,20 @@
       <div class="instruction-text" id="instructionText">
         <span class="placeholder">Begin walk when ready.</span>
       </div>
+
+      <div class="path-stage" id="pathStage">
+        <svg id="pathSvg" viewBox="-2.5 -2.5 5 5">
+          <circle class="path-origin" cx="0" cy="0" r="0.12"/>
+          <path class="path-line" id="pathLine" d=""/>
+          <circle class="user-dot" id="userDot" cx="0" cy="0" r="0.14"/>
+        </svg>
+      </div>
     </div>
 
     <div class="controls">
       <button class="walk-btn" id="genButton" aria-label="Begin walk">
         <svg id="arrowIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M4 12h15M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <svg id="compassIcon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
-          <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1" opacity="0.4"/>
-          <circle cx="12" cy="4.6" r="0.6" fill="currentColor" opacity="0.4"/>
-          <g id="needleGroup">
-            <path d="M12 5 L13.6 12 L12 19 L10.4 12 Z" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
-          </g>
-          <circle cx="12" cy="12" r="0.8" fill="currentColor"/>
         </svg>
       </button>
     </div>
@@ -404,25 +449,22 @@ const instructionEl = document.getElementById('instructionText');
 const button = document.getElementById('genButton');
 const tallyEl = document.getElementById('tally');
 const arrowIcon = document.getElementById('arrowIcon');
-const compassIcon = document.getElementById('compassIcon');
-const needleGroup = document.getElementById('needleGroup');
 
 let count = 0;
 
-/* --- compass (mobile only) ---
-   On a phone with an orientation sensor, the arrow becomes a real needle
-   pointing north. Desktop, or a phone that denies/lacks the sensor,
-   just keeps the plain chevron — no broken half-state. */
+/* --- heading (mobile only) ---
+   No separate compass dial — the same chevron that doubles as the
+   "next instruction" button also rotates to point at wherever the
+   walker needs to go next on the current path. If there's no active
+   path yet, or no heading sensor, it just sits as a plain forward
+   chevron. Direction is computed in updateArrowDirection(), further
+   down, once path + position logic exists. */
 
 const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const hasOrientation = typeof DeviceOrientationEvent !== 'undefined';
 
-let compassEnabled = false;
-let compassRequested = false;
-
-function setNeedleHeading(heading){
-  needleGroup.setAttribute('transform', `rotate(${-heading} 12 12)`);
-}
+let headingRequested = false;
+let currentHeading = null; // degrees, 0 = north, clockwise
 
 function handleOrientation(e){
   let heading = null;
@@ -433,17 +475,13 @@ function handleOrientation(e){
   }
   if (heading == null || isNaN(heading)) return;
 
-  if (!compassEnabled){
-    compassEnabled = true;
-    arrowIcon.style.display = 'none';
-    compassIcon.style.display = 'block';
-  }
-  setNeedleHeading(heading);
+  currentHeading = heading;
+  updateArrowDirection();
 }
 
-function enableCompass(){
-  if (compassRequested || !isTouch || !hasOrientation) return;
-  compassRequested = true;
+function requestHeading(){
+  if (headingRequested || !isTouch || !hasOrientation) return;
+  headingRequested = true;
 
   const attach = () => {
     window.addEventListener('deviceorientationabsolute', handleOrientation, true);
@@ -460,6 +498,190 @@ function enableCompass(){
   }
 }
 
+/* --- generated path (mobile + location only) ---
+   Each instruction gets its own loose, wandering line 1-3m long,
+   rooted at wherever the walker is standing when it's generated.
+   The walker shows as a green dot; the line turns green once
+   they've passed close to nearly all of it. */
+
+const pathStage = document.getElementById('pathStage');
+const pathLine = document.getElementById('pathLine');
+const userDot = document.getElementById('userDot');
+
+const hasGeolocation = 'geolocation' in navigator;
+const PATH_TOLERANCE_M = 1.0;   // how close counts as "on the line"
+const COMPLETE_RATIO = 0.9;     // fraction of the line that must be covered
+
+let locationRequested = false;
+let currentPos = null;   // { lat, lon }
+let pathOrigin = null;   // { lat, lon } path was generated from
+let pathSamples = [];    // [{ x, y, covered }] in local meters
+let pathActive = false;
+let pathComplete = false;
+let pendingPathDraw = false; // true when an instruction is waiting on a first GPS fix
+
+function gpsToLocal(lat, lon, originLat, originLon){
+  const R = 6378137;
+  const dLat = (lat - originLat) * Math.PI / 180;
+  const dLon = (lon - originLon) * Math.PI / 180;
+  const north = dLat * R;
+  const east = dLon * R * Math.cos(originLat * Math.PI / 180);
+  return { x: east, y: -north }; // SVG y grows downward; flip so north is up
+}
+
+// Smooth curve through the sample points — the same points double as
+// coverage-tracking targets, so the visual shape and the "have I walked
+// this part yet" check always agree.
+function catmullRomPath(points){
+  if (points.length < 2) return '';
+  let d = `M ${points[0].x.toFixed(3)} ${points[0].y.toFixed(3)} `;
+  for (let i = 0; i < points.length - 1; i++){
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    d += `C ${c1x.toFixed(3)} ${c1y.toFixed(3)}, ${c2x.toFixed(3)} ${c2y.toFixed(3)}, ${p2.x.toFixed(3)} ${p2.y.toFixed(3)} `;
+  }
+  return d;
+}
+
+function generatePath(){
+  const targetLength = 1 + Math.random() * 2; // 1-3m
+  const steps = 16 + Math.floor(Math.random() * 10);
+  const stepLen = targetLength / (steps - 1);
+  const points = [{ x: 0, y: 0 }];
+  let heading = Math.random() * Math.PI * 2;
+
+  for (let i = 1; i < steps; i++){
+    heading += (Math.random() - 0.5) * 1.1; // organic wobble, not a straight line
+    const prev = points[i - 1];
+    points.push({
+      x: prev.x + Math.cos(heading) * stepLen,
+      y: prev.y + Math.sin(heading) * stepLen,
+    });
+  }
+
+  // rescale so the wobbly walk still lands close to the target length
+  let rawLength = 0;
+  for (let i = 1; i < points.length; i++){
+    rawLength += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  const scale = rawLength > 0 ? targetLength / rawLength : 1;
+  return points.map(p => ({ x: p.x * scale, y: p.y * scale, covered: false }));
+}
+
+function updatePathForInstruction(){
+  if (!hasGeolocation || !isTouch){
+    pathActive = false;
+    pendingPathDraw = false;
+    pathStage.style.display = 'none';
+    return;
+  }
+
+  if (!currentPos){
+    // No GPS fix yet — don't hide-and-forget. Flag it so the path draws
+    // itself the instant a fix arrives, instead of waiting for the next tap.
+    pathActive = false;
+    pendingPathDraw = true;
+    pathStage.style.display = 'none';
+    return;
+  }
+
+  pendingPathDraw = false;
+  pathOrigin = { lat: currentPos.lat, lon: currentPos.lon };
+  pathSamples = generatePath();
+  pathComplete = false;
+  pathActive = true;
+
+  pathLine.classList.remove('complete');
+  pathLine.setAttribute('d', catmullRomPath(pathSamples));
+  userDot.setAttribute('cx', '0');
+  userDot.setAttribute('cy', '0');
+  userDot.style.display = 'block';
+  pathStage.style.display = 'block';
+  updateArrowDirection();
+}
+
+function updateUserDotAndCoverage(){
+  if (!pathActive || !currentPos || !pathOrigin) return;
+
+  const local = gpsToLocal(currentPos.lat, currentPos.lon, pathOrigin.lat, pathOrigin.lon);
+  userDot.setAttribute('cx', local.x.toFixed(3));
+  userDot.setAttribute('cy', local.y.toFixed(3));
+
+  if (pathComplete) return;
+
+  let coveredCount = 0;
+  for (const s of pathSamples){
+    if (!s.covered && Math.hypot(local.x - s.x, local.y - s.y) <= PATH_TOLERANCE_M){
+      s.covered = true;
+    }
+    if (s.covered) coveredCount++;
+  }
+
+  if (coveredCount / pathSamples.length >= COMPLETE_RATIO){
+    pathComplete = true;
+    pathLine.classList.add('complete');
+  }
+
+  updateArrowDirection();
+}
+
+function handlePosition(pos){
+  currentPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+  if (pendingPathDraw){
+    updatePathForInstruction(); // draw the moment the fix that was missing arrives
+  } else {
+    updateUserDotAndCoverage();
+  }
+}
+
+/* --- direction arrow ---
+   Points the same chevron used everywhere else at whichever way the
+   walker still needs to go to finish the current path: bearing from
+   the walker's live position to the nearest not-yet-covered point on
+   the path, shown relative to the phone's current compass heading. */
+
+function updateArrowDirection(){
+  if (!pathActive || pathComplete || currentHeading == null || !currentPos || !pathOrigin || !pathSamples.length){
+    arrowIcon.style.transform = '';
+    return;
+  }
+
+  const target = pathSamples.find(s => !s.covered) || pathSamples[pathSamples.length - 1];
+  const user = gpsToLocal(currentPos.lat, currentPos.lon, pathOrigin.lat, pathOrigin.lon);
+
+  const deltaEast = target.x - user.x;
+  const deltaNorth = user.y - target.y; // local y is flipped (north-up), so this recovers real north delta
+
+  if (Math.hypot(deltaEast, deltaNorth) < 0.15){
+    // basically standing on the target point — don't spin the arrow over noise
+    return;
+  }
+
+  let bearing = Math.atan2(deltaEast, deltaNorth) * 180 / Math.PI;
+  bearing = (bearing + 360) % 360;
+
+  const relative = (bearing - currentHeading + 360) % 360;
+  const rotation = relative - 90; // arrow's rest pose points right, i.e. "90° relative"
+
+  arrowIcon.style.transform = `rotate(${rotation}deg)`;
+}
+
+function enableLocation(){
+  if (locationRequested || !hasGeolocation || !isTouch) return;
+  locationRequested = true;
+  navigator.geolocation.watchPosition(handlePosition, () => {}, {
+    enableHighAccuracy: true,
+    maximumAge: 1000,
+    timeout: 15000,
+  });
+}
+
 function renderInstruction({ text }){
   const words = text.split(' ');
   instructionEl.innerHTML = words
@@ -469,12 +691,22 @@ function renderInstruction({ text }){
   count += 1;
   tallyEl.textContent = String(count).padStart(2, '0');
   button.setAttribute('aria-label', 'Next instruction');
+
+  updatePathForInstruction();
 }
 
 button.addEventListener('click', () => {
-  enableCompass();
+  requestHeading();
+  enableLocation();
   renderInstruction(generateInstruction());
 });
+
+// Start acquiring GPS as early as possible (page load, not first tap) so a
+// fix is already available by the time someone starts walking, instead of
+// the dot lagging a few steps behind while the first fix comes in.
+// (Heading needs an explicit user gesture on iOS, so that one still waits
+// for the button click above.)
+enableLocation();
 </script>
 
 </body>
