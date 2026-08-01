@@ -540,18 +540,21 @@ function distanceMeters(a, b){
 
 /* --- GPS smoothing ---
    Raw phone GPS wobbles by several meters second to second even while
-   perfectly still — bigger than the whole 1-3m path. Two filters tame
-   that: fixes are weighted by their own accuracy (a noisy fix barely
-   nudges the smoothed position), and movement per update is capped to
-   what's plausible for someone actually walking, so a single bad fix
-   can't yank the dot across the path. */
+   perfectly still — rotating the phone alone can change which satellites
+   it has a clean line to and shift the fix, with nobody moving at all.
+   That's bigger than the whole 1-3m path, so the tolerance here is tight:
+   a deadband ignores fixes that are within the noise floor outright, a
+   low weight cap means even a "real" fix only nudges the smoothed dot a
+   little, and movement per update is capped to what a walking person
+   could plausibly cover. */
 
-const GPS_MAX_ACCURACY_M = 30;     // fixes worse than this are ignored outright
-const GPS_IDEAL_ACCURACY_M = 4;    // accuracy at/under this gets full responsiveness
-const GPS_SMOOTH_MIN_W = 0.05;
-const GPS_SMOOTH_MAX_W = 0.45;
-const GPS_MAX_WALK_MPS = 1.6;      // generous walking pace
-const GPS_STILL_SLACK_M = 1.2;     // extra slack per update so real steps aren't clamped away
+const GPS_MAX_ACCURACY_M = 25;     // fixes worse than this are ignored outright
+const GPS_DEADBAND_M = 0.4;        // fixes closer than this to the current dot are treated as noise, not movement
+const GPS_IDEAL_ACCURACY_M = 3;    // accuracy at/under this gets the most responsiveness
+const GPS_SMOOTH_MIN_W = 0.03;
+const GPS_SMOOTH_MAX_W = 0.2;
+const GPS_MAX_WALK_MPS = 1.2;      // walking pace, not sprinting
+const GPS_STILL_SLACK_M = 0.35;    // small cushion per update so real steps aren't clamped away
 
 let smoothedPos = null;       // { lat, lon } — the filtered position used everywhere
 let smoothedAccuracy = null;
@@ -563,6 +566,16 @@ function smoothPosition(raw, accuracy, now){
   if (!smoothedPos){
     smoothedPos = { lat: raw.lat, lon: raw.lon };
     smoothedAccuracy = acc;
+    lastFixTime = now;
+    return smoothedPos;
+  }
+
+  // deadband: if this fix sits within the noise floor of where we already
+  // think we are, it's not a real move — ignore it rather than nudge the dot.
+  const rawMoved = distanceMeters(smoothedPos, raw);
+  const noiseFloor = Math.max(GPS_DEADBAND_M, acc * 0.3);
+  if (rawMoved < noiseFloor){
+    smoothedAccuracy = smoothedAccuracy + (acc - smoothedAccuracy) * 0.15;
     lastFixTime = now;
     return smoothedPos;
   }
