@@ -529,6 +529,69 @@ function gpsToLocal(lat, lon, originLat, originLon){
   return { x: east, y: -north }; // SVG y grows downward; flip so north is up
 }
 
+function distanceMeters(a, b){
+  const R = 6378137;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+  const north = dLat * R;
+  const east = dLon * R * Math.cos(a.lat * Math.PI / 180);
+  return Math.hypot(north, east);
+}
+
+/* --- GPS smoothing ---
+   Raw phone GPS wobbles by several meters second to second even while
+   perfectly still — bigger than the whole 1-3m path. Two filters tame
+   that: fixes are weighted by their own accuracy (a noisy fix barely
+   nudges the smoothed position), and movement per update is capped to
+   what's plausible for someone actually walking, so a single bad fix
+   can't yank the dot across the path. */
+
+const GPS_MAX_ACCURACY_M = 30;     // fixes worse than this are ignored outright
+const GPS_IDEAL_ACCURACY_M = 4;    // accuracy at/under this gets full responsiveness
+const GPS_SMOOTH_MIN_W = 0.05;
+const GPS_SMOOTH_MAX_W = 0.45;
+const GPS_MAX_WALK_MPS = 1.6;      // generous walking pace
+const GPS_STILL_SLACK_M = 1.2;     // extra slack per update so real steps aren't clamped away
+
+let smoothedPos = null;       // { lat, lon } — the filtered position used everywhere
+let smoothedAccuracy = null;
+let lastFixTime = null;
+
+function smoothPosition(raw, accuracy, now){
+  const acc = (typeof accuracy === 'number' && accuracy > 0) ? accuracy : 15;
+
+  if (!smoothedPos){
+    smoothedPos = { lat: raw.lat, lon: raw.lon };
+    smoothedAccuracy = acc;
+    lastFixTime = now;
+    return smoothedPos;
+  }
+
+  const w = Math.max(GPS_SMOOTH_MIN_W, Math.min(GPS_SMOOTH_MAX_W, GPS_IDEAL_ACCURACY_M / acc));
+
+  let candidate = {
+    lat: smoothedPos.lat + (raw.lat - smoothedPos.lat) * w,
+    lon: smoothedPos.lon + (raw.lon - smoothedPos.lon) * w,
+  };
+
+  // clamp this update's movement to what a walking person could plausibly cover
+  const dt = lastFixTime ? Math.max(0.2, (now - lastFixTime) / 1000) : 1;
+  const maxStep = GPS_MAX_WALK_MPS * dt + GPS_STILL_SLACK_M;
+  const moved = distanceMeters(smoothedPos, candidate);
+  if (moved > maxStep){
+    const t = maxStep / moved;
+    candidate = {
+      lat: smoothedPos.lat + (candidate.lat - smoothedPos.lat) * t,
+      lon: smoothedPos.lon + (candidate.lon - smoothedPos.lon) * t,
+    };
+  }
+
+  smoothedPos = candidate;
+  smoothedAccuracy = smoothedAccuracy + (acc - smoothedAccuracy) * w;
+  lastFixTime = now;
+  return smoothedPos;
+}
+
 // Smooth curve through the sample points — the same points double as
 // coverage-tracking targets, so the visual shape and the "have I walked
 // this part yet" check always agree.
@@ -632,7 +695,15 @@ function updateUserDotAndCoverage(){
 }
 
 function handlePosition(pos){
-  currentPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+  const acc = pos.coords.accuracy;
+  if (typeof acc === 'number' && acc > GPS_MAX_ACCURACY_M) return; // too noisy to trust at all
+
+  currentPos = smoothPosition(
+    { lat: pos.coords.latitude, lon: pos.coords.longitude },
+    acc,
+    Date.now()
+  );
+
   if (pendingPathDraw){
     updatePathForInstruction(); // draw the moment the fix that was missing arrives
   } else {
