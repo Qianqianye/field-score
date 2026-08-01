@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Field Score</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍃</text></svg>">
 <style>
@@ -19,14 +19,21 @@
 
   html, body{
     margin:0; padding:0;
-    min-height:100vh;
+    height:100%;
+    width:100%;
+    overflow:hidden;
+    position:fixed;
+    inset:0;
+    overscroll-behavior:none;
+    touch-action:none;
     background: var(--paper);
     color: var(--ink);
     font-family: 'Helvetica Neue', Arial, sans-serif;
   }
 
   .wrap{
-    min-height:100vh;
+    height:100%;
+    overflow:hidden;
     display:flex;
     flex-direction:column;
     align-items:center;
@@ -115,20 +122,13 @@
 
   .path-stage svg{ width:100%; height:100%; display:block; overflow:visible; }
 
-  .path-line{
+  .trail-segment{
     fill:none;
-    stroke: var(--ink);
     stroke-width: 1.6;
     stroke-linecap: round;
     stroke-linejoin: round;
-    opacity: 0.55;
+    opacity: 0.85;
     vector-effect: non-scaling-stroke;
-    transition: stroke 0.5s ease, opacity 0.5s ease;
-  }
-
-  .path-line.complete{
-    stroke: var(--green);
-    opacity: 1;
   }
 
   .path-origin{
@@ -222,8 +222,8 @@
 
       <div class="path-stage" id="pathStage">
         <svg id="pathSvg" viewBox="-2.5 -2.5 5 5">
-          <circle class="path-origin" cx="0" cy="0" r="0.12"/>
-          <path class="path-line" id="pathLine" d=""/>
+          <circle class="path-origin" id="walkStartMarker" cx="0" cy="0" r="0.12" style="display:none"/>
+          <g id="trailGroup"></g>
           <circle class="user-dot" id="userDot" cx="0" cy="0" r="0.14"/>
         </svg>
       </div>
@@ -454,11 +454,9 @@ let count = 0;
 
 /* --- heading (mobile only) ---
    No separate compass dial — the same chevron that doubles as the
-   "next instruction" button also rotates to point at wherever the
-   walker needs to go next on the current path. If there's no active
-   path yet, or no heading sensor, it just sits as a plain forward
-   chevron. Direction is computed in updateArrowDirection(), further
-   down, once path + position logic exists. */
+   "next instruction" button also acts as a compass needle, always
+   rotating to point true north as you turn. If there's no heading
+   sensor it just sits as a plain forward chevron. */
 
 const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const hasOrientation = typeof DeviceOrientationEvent !== 'undefined';
@@ -476,7 +474,7 @@ function handleOrientation(e){
   if (heading == null || isNaN(heading)) return;
 
   currentHeading = heading;
-  updateArrowDirection();
+  updateCompassArrow();
 }
 
 function requestHeading(){
@@ -498,27 +496,50 @@ function requestHeading(){
   }
 }
 
-/* --- generated path (mobile + location only) ---
-   Each instruction gets its own loose, wandering line 1-3m long,
-   rooted at wherever the walker is standing when it's generated.
-   The walker shows as a green dot; the line turns green once
-   they've passed close to nearly all of it. */
+function updateCompassArrow(){
+  if (currentHeading == null){
+    arrowIcon.style.transform = '';
+    return;
+  }
+  const relative = (360 - currentHeading) % 360; // bearing to north relative to facing direction
+  const rotation = relative - 90; // arrow's rest pose points right, i.e. "90° relative"
+  arrowIcon.style.transform = `rotate(${rotation}deg)`;
+}
+
+/* --- real-position trail (mobile + location only) ---
+   No more generated shape to trace — this line is simply everywhere
+   the walker has actually been since tapping "begin walk". It keeps
+   growing across instructions instead of resetting each time; each
+   instruction's stretch draws in its own color so it's clear where
+   one ended and the next began. The little map auto-zooms out to
+   keep the whole trail-so-far in view. */
 
 const pathStage = document.getElementById('pathStage');
-const pathLine = document.getElementById('pathLine');
+const pathSvg = document.getElementById('pathSvg');
+const trailGroup = document.getElementById('trailGroup');
+const walkStartMarker = document.getElementById('walkStartMarker');
 const userDot = document.getElementById('userDot');
 
 const hasGeolocation = 'geolocation' in navigator;
-const PATH_TOLERANCE_M = 1.0;   // how close counts as "on the line"
-const COMPLETE_RATIO = 0.9;     // fraction of the line that must be covered
+const TRAIL_MIN_POINT_SPACING_M = 0.12; // ignore sub-noise-floor jitter between recorded points
+
+const SEGMENT_COLORS = ['#33d16f', '#2b8fd1', '#d19a33', '#9a4fd1', '#d1495f', '#33b3a6'];
 
 let locationRequested = false;
-let currentPos = null;   // { lat, lon }
-let pathOrigin = null;   // { lat, lon } path was generated from
-let pathSamples = [];    // [{ x, y, covered }] in local meters
-let pathActive = false;
-let pathComplete = false;
-let pendingPathDraw = false; // true when an instruction is waiting on a first GPS fix
+let currentPos = null;      // { lat, lon } — smoothed, current position
+let sessionOrigin = null;   // { lat, lon } — fixed reference point for the whole walk's local coords
+let walkStarted = false;
+let trailSegments = [];     // array of arrays of { x, y } points, one array per instruction
+let segmentEls = [];        // matching <path> element for each entry in trailSegments
+
+let viewState = null;       // { cx, cy, size } — smoothly-animated viewBox, in local meters
+const VIEW_MIN_SIZE = 5;    // don't zoom in tighter than the original 5x5m default
+const VIEW_PADDING = 1.4;   // headroom so the trail isn't pressed against the edge
+
+function polylinePath(points){
+  if (points.length < 2) return '';
+  return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(3)} ${p.y.toFixed(3)}`).join(' ');
+}
 
 function gpsToLocal(lat, lon, originLat, originLon){
   const R = 6378137;
@@ -538,12 +559,15 @@ function distanceMeters(a, b){
   return Math.hypot(north, east);
 }
 
+function toLocal(pos){
+  return gpsToLocal(pos.lat, pos.lon, sessionOrigin.lat, sessionOrigin.lon);
+}
+
 /* --- GPS smoothing ---
    Raw phone GPS wobbles by several meters second to second even while
    perfectly still — rotating the phone alone can change which satellites
    it has a clean line to and shift the fix, with nobody moving at all.
-   That's bigger than the whole 1-3m path, so the tolerance here is tight:
-   a deadband ignores fixes that are within the noise floor outright, a
+   A deadband ignores fixes that are within the noise floor outright, a
    low weight cap means even a "real" fix only nudges the smoothed dot a
    little, and movement per update is capped to what a walking person
    could plausibly cover. */
@@ -556,155 +580,141 @@ const GPS_SMOOTH_MAX_W = 0.2;
 const GPS_MAX_WALK_MPS = 1.2;      // walking pace, not sprinting
 const GPS_STILL_SLACK_M = 0.35;    // small cushion per update so real steps aren't clamped away
 
-let smoothedPos = null;       // { lat, lon } — the filtered position used everywhere
 let smoothedAccuracy = null;
 let lastFixTime = null;
 
 function smoothPosition(raw, accuracy, now){
   const acc = (typeof accuracy === 'number' && accuracy > 0) ? accuracy : 15;
 
-  if (!smoothedPos){
-    smoothedPos = { lat: raw.lat, lon: raw.lon };
+  if (!currentPos){
     smoothedAccuracy = acc;
     lastFixTime = now;
-    return smoothedPos;
+    return { lat: raw.lat, lon: raw.lon };
   }
 
   // deadband: if this fix sits within the noise floor of where we already
   // think we are, it's not a real move — ignore it rather than nudge the dot.
-  const rawMoved = distanceMeters(smoothedPos, raw);
+  const rawMoved = distanceMeters(currentPos, raw);
   const noiseFloor = Math.max(GPS_DEADBAND_M, acc * 0.3);
   if (rawMoved < noiseFloor){
     smoothedAccuracy = smoothedAccuracy + (acc - smoothedAccuracy) * 0.15;
     lastFixTime = now;
-    return smoothedPos;
+    return currentPos;
   }
 
   const w = Math.max(GPS_SMOOTH_MIN_W, Math.min(GPS_SMOOTH_MAX_W, GPS_IDEAL_ACCURACY_M / acc));
 
   let candidate = {
-    lat: smoothedPos.lat + (raw.lat - smoothedPos.lat) * w,
-    lon: smoothedPos.lon + (raw.lon - smoothedPos.lon) * w,
+    lat: currentPos.lat + (raw.lat - currentPos.lat) * w,
+    lon: currentPos.lon + (raw.lon - currentPos.lon) * w,
   };
 
   // clamp this update's movement to what a walking person could plausibly cover
   const dt = lastFixTime ? Math.max(0.2, (now - lastFixTime) / 1000) : 1;
   const maxStep = GPS_MAX_WALK_MPS * dt + GPS_STILL_SLACK_M;
-  const moved = distanceMeters(smoothedPos, candidate);
+  const moved = distanceMeters(currentPos, candidate);
   if (moved > maxStep){
     const t = maxStep / moved;
     candidate = {
-      lat: smoothedPos.lat + (candidate.lat - smoothedPos.lat) * t,
-      lon: smoothedPos.lon + (candidate.lon - smoothedPos.lon) * t,
+      lat: currentPos.lat + (candidate.lat - currentPos.lat) * t,
+      lon: currentPos.lon + (candidate.lon - currentPos.lon) * t,
     };
   }
 
-  smoothedPos = candidate;
   smoothedAccuracy = smoothedAccuracy + (acc - smoothedAccuracy) * w;
   lastFixTime = now;
-  return smoothedPos;
+  return candidate;
 }
 
-// Smooth curve through the sample points — the same points double as
-// coverage-tracking targets, so the visual shape and the "have I walked
-// this part yet" check always agree.
-function catmullRomPath(points){
-  if (points.length < 2) return '';
-  let d = `M ${points[0].x.toFixed(3)} ${points[0].y.toFixed(3)} `;
-  for (let i = 0; i < points.length - 1; i++){
-    const p0 = points[i - 1] || points[i];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[i + 2] || p2;
-    const c1x = p1.x + (p2.x - p0.x) / 6;
-    const c1y = p1.y + (p2.y - p0.y) / 6;
-    const c2x = p2.x - (p3.x - p1.x) / 6;
-    const c2y = p2.y - (p3.y - p1.y) / 6;
-    d += `C ${c1x.toFixed(3)} ${c1y.toFixed(3)}, ${c2x.toFixed(3)} ${c2y.toFixed(3)}, ${p2.x.toFixed(3)} ${p2.y.toFixed(3)} `;
+function lastRecordedPoint(){
+  for (let i = trailSegments.length - 1; i >= 0; i--){
+    const seg = trailSegments[i];
+    if (seg.length) return seg[seg.length - 1];
   }
-  return d;
+  return null;
 }
 
-function generatePath(){
-  const targetLength = 1 + Math.random() * 2; // 1-3m
-  const steps = 16 + Math.floor(Math.random() * 10);
-  const stepLen = targetLength / (steps - 1);
-  const points = [{ x: 0, y: 0 }];
-  let heading = Math.random() * Math.PI * 2;
+function beginNewSegment(){
+  const seg = [];
+  const prev = lastRecordedPoint();
+  if (prev) seg.push({ x: prev.x, y: prev.y }); // shared vertex keeps the line continuous
 
-  for (let i = 1; i < steps; i++){
-    heading += (Math.random() - 0.5) * 1.1; // organic wobble, not a straight line
-    const prev = points[i - 1];
-    points.push({
-      x: prev.x + Math.cos(heading) * stepLen,
-      y: prev.y + Math.sin(heading) * stepLen,
-    });
-  }
+  trailSegments.push(seg);
 
-  // rescale so the wobbly walk still lands close to the target length
-  let rawLength = 0;
-  for (let i = 1; i < points.length; i++){
-    rawLength += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
-  }
-  const scale = rawLength > 0 ? targetLength / rawLength : 1;
-  return points.map(p => ({ x: p.x * scale, y: p.y * scale, covered: false }));
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  el.setAttribute('class', 'trail-segment');
+  el.style.stroke = SEGMENT_COLORS[(trailSegments.length - 1) % SEGMENT_COLORS.length];
+  trailGroup.appendChild(el);
+  segmentEls.push(el);
+
+  if (seg.length) el.setAttribute('d', polylinePath(seg));
 }
 
-function updatePathForInstruction(){
-  if (!hasGeolocation || !isTouch){
-    pathActive = false;
-    pendingPathDraw = false;
-    pathStage.style.display = 'none';
-    return;
-  }
+function recordPoint(local){
+  if (!trailSegments.length) return;
+  const seg = trailSegments[trailSegments.length - 1];
+  const last = seg.length ? seg[seg.length - 1] : null;
 
-  if (!currentPos){
-    // No GPS fix yet — don't hide-and-forget. Flag it so the path draws
-    // itself the instant a fix arrives, instead of waiting for the next tap.
-    pathActive = false;
-    pendingPathDraw = true;
-    pathStage.style.display = 'none';
-    return;
-  }
+  if (last && Math.hypot(local.x - last.x, local.y - last.y) < TRAIL_MIN_POINT_SPACING_M) return;
 
-  pendingPathDraw = false;
-  pathOrigin = { lat: currentPos.lat, lon: currentPos.lon };
-  pathSamples = generatePath();
-  pathComplete = false;
-  pathActive = true;
-
-  pathLine.classList.remove('complete');
-  pathLine.setAttribute('d', catmullRomPath(pathSamples));
-  userDot.setAttribute('cx', '0');
-  userDot.setAttribute('cy', '0');
-  userDot.style.display = 'block';
-  pathStage.style.display = 'block';
-  updateArrowDirection();
+  seg.push({ x: local.x, y: local.y });
+  segmentEls[segmentEls.length - 1].setAttribute('d', polylinePath(seg));
 }
 
-function updateUserDotAndCoverage(){
-  if (!pathActive || !currentPos || !pathOrigin) return;
+function updateViewBox(local){
+  const points = [];
+  for (const seg of trailSegments) for (const p of seg) points.push(p);
+  if (local) points.push(local);
+  if (!points.length) return;
 
-  const local = gpsToLocal(currentPos.lat, currentPos.lon, pathOrigin.lat, pathOrigin.lon);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of points){
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const span = Math.max(maxX - minX, maxY - minY, VIEW_MIN_SIZE / VIEW_PADDING);
+  const size = span * VIEW_PADDING;
+
+  if (!viewState){
+    viewState = { cx, cy, size };
+  } else {
+    // ease toward the new bounds instead of snapping, so zooming out reads as a gentle pull-back
+    const w = 0.25;
+    viewState = {
+      cx: viewState.cx + (cx - viewState.cx) * w,
+      cy: viewState.cy + (cy - viewState.cy) * w,
+      size: viewState.size + (size - viewState.size) * w,
+    };
+  }
+
+  const half = viewState.size / 2;
+  pathSvg.setAttribute(
+    'viewBox',
+    `${(viewState.cx - half).toFixed(3)} ${(viewState.cy - half).toFixed(3)} ${viewState.size.toFixed(3)} ${viewState.size.toFixed(3)}`
+  );
+}
+
+function updateTrail(){
+  if (!walkStarted || !currentPos) return;
+
+  if (!sessionOrigin){
+    sessionOrigin = { lat: currentPos.lat, lon: currentPos.lon };
+    walkStartMarker.style.display = 'block';
+  }
+
+  const local = toLocal(currentPos);
+  recordPoint(local);
+
   userDot.setAttribute('cx', local.x.toFixed(3));
   userDot.setAttribute('cy', local.y.toFixed(3));
+  userDot.style.display = 'block';
 
-  if (pathComplete) return;
-
-  let coveredCount = 0;
-  for (const s of pathSamples){
-    if (!s.covered && Math.hypot(local.x - s.x, local.y - s.y) <= PATH_TOLERANCE_M){
-      s.covered = true;
-    }
-    if (s.covered) coveredCount++;
-  }
-
-  if (coveredCount / pathSamples.length >= COMPLETE_RATIO){
-    pathComplete = true;
-    pathLine.classList.add('complete');
-  }
-
-  updateArrowDirection();
+  updateViewBox(local);
 }
 
 function handlePosition(pos){
@@ -717,43 +727,7 @@ function handlePosition(pos){
     Date.now()
   );
 
-  if (pendingPathDraw){
-    updatePathForInstruction(); // draw the moment the fix that was missing arrives
-  } else {
-    updateUserDotAndCoverage();
-  }
-}
-
-/* --- direction arrow ---
-   Points the same chevron used everywhere else at whichever way the
-   walker still needs to go to finish the current path: bearing from
-   the walker's live position to the nearest not-yet-covered point on
-   the path, shown relative to the phone's current compass heading. */
-
-function updateArrowDirection(){
-  if (!pathActive || pathComplete || currentHeading == null || !currentPos || !pathOrigin || !pathSamples.length){
-    arrowIcon.style.transform = '';
-    return;
-  }
-
-  const target = pathSamples.find(s => !s.covered) || pathSamples[pathSamples.length - 1];
-  const user = gpsToLocal(currentPos.lat, currentPos.lon, pathOrigin.lat, pathOrigin.lon);
-
-  const deltaEast = target.x - user.x;
-  const deltaNorth = user.y - target.y; // local y is flipped (north-up), so this recovers real north delta
-
-  if (Math.hypot(deltaEast, deltaNorth) < 0.15){
-    // basically standing on the target point — don't spin the arrow over noise
-    return;
-  }
-
-  let bearing = Math.atan2(deltaEast, deltaNorth) * 180 / Math.PI;
-  bearing = (bearing + 360) % 360;
-
-  const relative = (bearing - currentHeading + 360) % 360;
-  const rotation = relative - 90; // arrow's rest pose points right, i.e. "90° relative"
-
-  arrowIcon.style.transform = `rotate(${rotation}deg)`;
+  updateTrail();
 }
 
 function enableLocation(){
@@ -776,7 +750,12 @@ function renderInstruction({ text }){
   tallyEl.textContent = String(count).padStart(2, '0');
   button.setAttribute('aria-label', 'Next instruction');
 
-  updatePathForInstruction();
+  if (hasGeolocation && isTouch){
+    walkStarted = true;
+    pathStage.style.display = 'block';
+    beginNewSegment();
+    if (currentPos) updateTrail(); // in case a fix already arrived before this tap
+  }
 }
 
 button.addEventListener('click', () => {
