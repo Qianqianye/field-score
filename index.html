@@ -572,7 +572,7 @@ function toLocal(pos){
    little, and movement per update is capped to what a walking person
    could plausibly cover. */
 
-const GPS_MAX_ACCURACY_M = 25;     // fixes worse than this are ignored outright
+const GPS_MAX_ACCURACY_M = 50;     // fixes worse than this are ignored (after the first)
 const GPS_DEADBAND_M = 0.4;        // fixes closer than this to the current dot are treated as noise, not movement
 const GPS_IDEAL_ACCURACY_M = 3;    // accuracy at/under this gets the most responsiveness
 const GPS_SMOOTH_MIN_W = 0.03;
@@ -719,7 +719,13 @@ function updateTrail(){
 
 function handlePosition(pos){
   const acc = pos.coords.accuracy;
-  if (typeof acc === 'number' && acc > GPS_MAX_ACCURACY_M) return; // too noisy to trust at all
+  const isFirstFix = !currentPos;
+
+  // A coarse, later fix isn't worth showing (e.g. a momentary satellite
+  // dropout) — but always accept the very first fix no matter how rough,
+  // so the trail actually has somewhere to start from instead of never
+  // beginning at all while waiting for a fix that's "accurate enough".
+  if (!isFirstFix && typeof acc === 'number' && acc > GPS_MAX_ACCURACY_M) return;
 
   currentPos = smoothPosition(
     { lat: pos.coords.latitude, lon: pos.coords.longitude },
