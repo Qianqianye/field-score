@@ -12,7 +12,7 @@
 /*    --paper-card: #d9d6c4;*/
     --ink: #2b2e23;
 /*    --ink-soft: #565a49;*/
-    --green: #33d16f;
+    --green: #00ff00;
   }
 
   *{ box-sizing: border-box; }
@@ -142,7 +142,8 @@
   .user-dot{
     fill: var(--green);
     display:none;
-    transition: cx 0.3s linear, cy 0.3s linear;
+    transition: cx 0.15s linear, cy 0.15s linear;
+    filter: drop-shadow(0 0 2px rgba(0,255,0,0.8));
   }
 
   .placeholder{
@@ -523,7 +524,7 @@ const userDot = document.getElementById('userDot');
 const hasGeolocation = 'geolocation' in navigator;
 const TRAIL_MIN_POINT_SPACING_M = 0.12; // ignore sub-noise-floor jitter between recorded points
 
-const SEGMENT_COLORS = ['#33d16f', '#2b8fd1', '#d19a33', '#9a4fd1', '#d1495f', '#33b3a6'];
+const SEGMENT_COLORS = ['#39ff14', '#00bfff', '#ffe600', '#ff00ff', '#ff3131', '#00fff0'];
 
 let locationRequested = false;
 let currentPos = null;      // { lat, lon } — smoothed, current position
@@ -573,12 +574,12 @@ function toLocal(pos){
    could plausibly cover. */
 
 const GPS_MAX_ACCURACY_M = 50;     // fixes worse than this are ignored (after the first)
-const GPS_DEADBAND_M = 0.4;        // fixes closer than this to the current dot are treated as noise, not movement
+const GPS_DEADBAND_M = 0.3;        // fixes closer than this to the current dot are treated as noise, not movement
 const GPS_IDEAL_ACCURACY_M = 3;    // accuracy at/under this gets the most responsiveness
-const GPS_SMOOTH_MIN_W = 0.03;
-const GPS_SMOOTH_MAX_W = 0.2;
-const GPS_MAX_WALK_MPS = 1.2;      // walking pace, not sprinting
-const GPS_STILL_SLACK_M = 0.35;    // small cushion per update so real steps aren't clamped away
+const GPS_SMOOTH_MIN_W = 0.12;
+const GPS_SMOOTH_MAX_W = 0.6;
+const GPS_MAX_WALK_MPS = 2;        // brisk walking pace
+const GPS_STILL_SLACK_M = 0.6;     // cushion per update so real steps aren't clamped away
 
 let smoothedAccuracy = null;
 let lastFixTime = null;
@@ -594,8 +595,11 @@ function smoothPosition(raw, accuracy, now){
 
   // deadband: if this fix sits within the noise floor of where we already
   // think we are, it's not a real move — ignore it rather than nudge the dot.
+  // Scaled lightly by accuracy (a fix reporting 20m of accuracy shouldn't be
+  // trusted down to the centimeter) but capped so poor accuracy alone can't
+  // make the whole path invisible to small real movement.
   const rawMoved = distanceMeters(currentPos, raw);
-  const noiseFloor = Math.max(GPS_DEADBAND_M, acc * 0.3);
+  const noiseFloor = Math.min(1.2, Math.max(GPS_DEADBAND_M, acc * 0.12));
   if (rawMoved < noiseFloor){
     smoothedAccuracy = smoothedAccuracy + (acc - smoothedAccuracy) * 0.15;
     lastFixTime = now;
@@ -741,7 +745,7 @@ function enableLocation(){
   locationRequested = true;
   navigator.geolocation.watchPosition(handlePosition, () => {}, {
     enableHighAccuracy: true,
-    maximumAge: 1000,
+    maximumAge: 0,
     timeout: 15000,
   });
 }
